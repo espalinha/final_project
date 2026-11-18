@@ -578,15 +578,48 @@ function detectGyro() {
   try {
     const g = new Gyroscope({ frequency: 10 });
     g.addEventListener('reading', () => { orient.hasGyro = true; g.stop(); });
-    g.addEventListener('error', () => {});
+    g.addEventListener('error', () => { });
     g.start();
   } catch { /* sem permissão/sem sensor */ }
 }
 
 function recenter() {
   orient.needsReset = true;
+  stab.reset = true;
   drag.yaw = 0;
   toast('Direção recentralizada ↑');
+}
+
+/* Filtro "One Euro": parado = muito suave; movimento rápido = responde rápido. */
+class OneEuro {
+  constructor(minCutoff = 1, beta = 0.5, dCutoff = 1) { this.config(minCutoff, beta); this.dCutoff = dCutoff; this.reset(); }
+  config(minCutoff, beta) { this.minCutoff = minCutoff; this.beta = beta; }
+  reset() { this.x = null; this.dx = 0; this.t = null; }
+  static alpha(cutoff, dt) { const tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / dt); }
+  filter(x, t) {
+    if (this.x === null) { this.x = x; this.t = t; return x; }
+    const dt = Math.max(1e-3, t - this.t); this.t = t;
+    const dxRaw = (x - this.x) / dt;
+    this.dx += OneEuro.alpha(this.dCutoff, dt) * (dxRaw - this.dx);
+    const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
+    this.x += OneEuro.alpha(cutoff, dt) * (x - this.x);
+    return this.x;
+  }
+}
+
+const _eulerOut = new THREE.Euler();
+const stab = {
+  yaw: new OneEuro(), pitch: new OneEuro(), roll: new OneEuro(),
+  reset: true, lastYawRaw: 0, yawUnwrapped: 0, yawShown: 0,
+  locked: false, lockPitch: -0.45, // modo travado: câmera inclinada ~26° para o chão
+};
+
+function toggleLock() {
+  stab.locked = !stab.locked;
+  if (stab.locked) stab.lockPitch = THREE.MathUtils.clamp(stab.pitch.x ?? -0.45, -1.0, -0.2);
+  $('#btnLock').classList.toggle('on', stab.locked);
+  $('#btnLock').textContent = stab.locked ? '🔒 Travado' : '🔓 Estabilizar';
+  toast(stab.locked ? 'Inclinação travada: só o giro lateral move as setas' : 'Movimento livre');
 }
 
 function updateFallbackCamera() {
@@ -600,11 +633,42 @@ function updateFallbackCamera() {
     if (orient.needsReset) {
       yawOffset.setFromAxisAngle(_yAxis, -yawFromQuat(_qDev));
       orient.needsReset = false;
-      camera.quaternion.copy(yawOffset).multiply(_qDev);
+      stab.reset = true;
     }
     _qTarget.copy(yawOffset).multiply(_qDev);
-    // suavização: mais forte quando não há giroscópio
-    camera.quaternion.slerp(_qTarget, orient.hasGyro ? 0.35 : 0.12);
+
+    // Separa em giro (yaw), inclinação (pitch) e rolagem (roll) e filtra cada um.
+    _eulerOut.setFromQuaternion(_qTarget, 'YXZ');
+    const now = performance.now() / 1000;
+    let yaw = _eulerOut.y, pitch = _eulerOut.x, roll = _eulerOut.z;
+
+    if (stab.reset) {
+      stab.yaw.reset(); stab.pitch.reset(); stab.roll.reset();
+      stab.lastYawRaw = yaw; stab.yawUnwrapped = yaw; stab.reset = false;
+    }
+    // "desenrola" o yaw para não pular de +180° para -180°
+    let dy = yaw - stab.lastYawRaw;
+    if (dy > Math.PI) dy -= 2 * Math.PI;
+    if (dy < -Math.PI) dy += 2 * Math.PI;
+    stab.lastYawRaw = yaw;
+    stab.yawUnwrapped += dy;
+
+    const strong = !orient.hasGyro; // sem giroscópio = filtro mais forte
+    stab.yaw.config(strong ? 0.25 : 0.8, strong ? 0.6 : 1.0);
+    stab.pitch.config(strong ? 0.35 : 1.0, 0.5);
+    stab.roll.config(0.3, 0.3);
+
+    let fy = stab.yaw.filter(stab.yawUnwrapped, now);
+    // zona morta: ignora tremidinhas menores que ~0,8°
+    if (Math.abs(fy - stab.yawShown) < THREE.MathUtils.degToRad(0.8)) fy = stab.yawShown;
+    stab.yawShown = fy;
+
+    let fp = stab.pitch.filter(pitch, now);
+    let fr = stab.roll.filter(roll, now);
+    if (stab.locked) { fp = stab.lockPitch; fr = 0; } // modo travado: só gira para os lados
+    else fr *= 0.3; // quase sem rolagem: horizonte fica estável
+
+    camera.quaternion.setFromEuler(_eulerOut.set(fp, fy, fr, 'YXZ'));
   } else {
     camera.rotation.set(drag.pitch, drag.yaw, 0, 'YXZ');
   }
@@ -930,6 +994,7 @@ async function init() {
   $('#btnRestart').onclick = restart;
   // tocar na instrução recentraliza a direção (útil se a bússola "puxar" a seta)
   $('.instruction').addEventListener('click', () => { if (state.mode === 'fallback') recenter(); });
+  $('#btnLock').onclick = toggleLock;
 
   // ?modo=compat força o modo compatível (para testar sem ARCore)
   if (params.get('modo') === 'compat') state.forceCompat = true;
