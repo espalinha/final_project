@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b1220">
+  <title>Rota Acessível AR – Demo</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+  </script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <!-- Fundo de câmera (usado só no "modo compatível", quando o aparelho não tem WebXR) -->
+  <video id="bgVideo" playsinline muted autoplay></video>
+
+  <!-- Tudo dentro de #overlay aparece por cima da câmera AR (WebXR DOM Overlay) -->
+  <div id="overlay">
+
+    <!-- 1. Escolha do destino -->
+    <section id="screenHome" class="screen active">
+      <div class="brand"><span class="wc">♿</span> Rota Acessível</div>
+      <h1>Olá, Lucas 👋</h1>
+      <p class="muted">Para onde você quer ir?</p>
+      <ul id="destList" class="dest-list"></ul>
+      <p class="muted small">Todas as rotas usam apenas elevadores e rampas. Nada de escadas.</p>
+      <p id="arSupport" class="pill small"></p>
+    </section>
+
+    <!-- 2. Ler QR de localização inicial -->
+    <section id="screenLocate" class="screen">
+      <div class="brand"><span class="wc">♿</span> Rota Acessível</div>
+      <h2>Onde você está?</h2>
+      <p class="muted">Destino: <strong id="locateDest"></strong></p>
+      <p>Leia o QR code ao lado da porta da sua sala para o prédio saber exatamente onde você está.</p>
+      <button id="btnScanStart" class="btn primary">📷 Ler QR de localização</button>
+      <button id="btnBackHome" class="btn ghost">Voltar</button>
+    </section>
+
+    <!-- 3. Cartão entre etapas (depois de cada QR) -->
+    <section id="screenStep" class="screen">
+      <div class="brand"><span class="wc">♿</span> Rota Acessível</div>
+      <div class="card">
+        <div class="tag" id="stepTag"></div>
+        <h2 id="stepPlace"></h2>
+        <div class="next">
+          <div class="next-icon" id="stepIcon"></div>
+          <div>
+            <div class="next-title" id="stepTitle"></div>
+            <div class="muted small" id="stepSub"></div>
+          </div>
+        </div>
+        <ol class="progress" id="stepProgress"></ol>
+      </div>
+      <p class="muted small center">Segure o celular em pé, apontado para a frente, na altura do peito (≈1,40 m).</p>
+      <button id="btnEnterAR" class="btn primary">🕶️ Ver setas em AR</button>
+    </section>
+
+    <!-- 4. Chegada -->
+    <section id="screenDone" class="screen">
+      <div class="done-emoji">😄</div>
+      <h1>Lucas chegou!</h1>
+      <p class="muted">Sala 23 · 2º andar</p>
+      <ul class="stats" id="doneStats"></ul>
+      <p class="center">Rota 100% acessível ✅</p>
+      <button id="btnRestart" class="btn ghost">Reiniciar demo</button>
+    </section>
+
+    <!-- HUD durante o AR -->
+    <section id="hud" class="hidden">
+      <div class="instruction">
+        <div id="hudIcon" class="instr-icon">⬆️</div>
+        <div class="instr-text">
+          <div id="hudTitle" class="instr-title"></div>
+          <div id="hudSub" class="instr-sub"></div>
+        </div>
+      </div>
+
+      <div id="minimapWrap">
+        <canvas id="minimap"></canvas>
+        <div id="minimapInfo"></div>
+      </div>
+
+      <div id="apiBadge" class="badge"></div>
+      <button id="btnScan" class="btn primary fab">📷 Ler QR</button>
+    </section>
+
+    <!-- Leitor de QR code -->
+    <section id="scanner" class="hidden">
+      <video id="scanVideo" playsinline muted></video>
+      <div class="scan-frame"></div>
+      <p id="scanHint" class="scan-hint">Aponte para o QR code</p>
+      <div class="scan-actions">
+        <button id="btnSimulate" class="btn ghost">Simular próximo QR</button>
+        <button id="btnScanCancel" class="btn ghost">Cancelar</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+</body>
+</html>
